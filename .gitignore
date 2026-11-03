@@ -174,3 +174,8 @@ logging/*
 test*
 
 *.DS_Store
+
+# Datasets are downloaded, never committed
+data/**
+!data/**/
+!data/**/.gitkeep
