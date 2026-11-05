@@ -8,13 +8,28 @@ dependencies = [
     "geopandas>=1.2.0",
     "igraph>=1.0.0",
     "matplotlib>=3.11.2",
-    "pandas>=3.1.0",
+    "pandas<3",
     "pyarrow>=26.0.1",
     "pyproj>=3.8.0",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
     "shapely>=2.2.0",
 ]
 
 [dependency-groups]
 dev = [
+    "gensim>=4.4.0",
+    "geopy>=2.5.0",
     "ipykernel>=7.4.0",
+    "nbconvert>=7.17.2",
+    "nbformat>=5.11.1",
+    "rdflib>=7.6.0",
+    "tqdm>=4.70.1",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dmg777k_eda"]

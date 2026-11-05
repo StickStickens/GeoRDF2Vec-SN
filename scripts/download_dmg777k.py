@@ -9,6 +9,7 @@ installing the loader, which depends on torch and torchvision.
 """
 
 import argparse
+import gzip
 import hashlib
 import shutil
 import sys
@@ -21,13 +22,13 @@ SHA256 = "825517b81d6fd420706fbc2d19d8f90c6a84daa60381bdcc30fed9150b9e3c58"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DEST = REPO_ROOT / "data" / "kgbench_dmg777k"
 EXPECTED_FILES = {
+    "triples.int.csv",
     "nodes.int.csv",
     "relations.int.csv",
     "training.int.csv",
     "validation.int.csv",
     "testing.int.csv",
 }
-TRIPLES_FILES = {"triples.int.csv", "triples.int.csv.gz"}
 CHUNK_SIZE = 1024 * 1024
 
 
@@ -99,10 +100,12 @@ def main() -> int:
 
     extract(archive, dest)
 
+    # data_preparation/dmg_data_prep.py reads the triples uncompressed.
+    with gzip.open(dest / "triples.int.csv.gz", "rb") as source, (dest / "triples.int.csv").open("wb") as out:
+        shutil.copyfileobj(source, out)
+
     present = {path.name for path in dest.iterdir()}
     missing = EXPECTED_FILES - present
-    if not TRIPLES_FILES & present:
-        missing.add("triples.int.csv[.gz]")
     if missing:
         print(f"Missing after unpacking: {sorted(missing)}", file=sys.stderr)
         return 1

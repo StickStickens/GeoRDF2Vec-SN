@@ -1,0 +1,9 @@
+# dmg777k: main outcomes
+
+Full evidence is in [notebooks/dmg777k_eda.ipynb](../notebooks/dmg777k_eda.ipynb).
+
+- **The repo reproduces the paper's graph.** Its parsing gives 776,920 edges and an average degree of 4.6775, both exactly as in the paper. It gives 332,194 nodes, so the paper's 331,194 is probably a typo. The mean edge distance also matches (46.34 km vs 46.37 km), but only with the code's longitude and latitude swapped; the correct order gives 36.50 km. We could not reproduce the mean edge weight (0.763 vs 0.833).
+- **Walks are much shorter than the setting suggests.** In the code (the paper never states a direction), they follow outgoing edges only and stop at literals, so with a limit of 8 they average about 1.7 steps. This changes how our adaptive walk length idea should be framed.
+- **As committed, the word2vec call trains on nothing,** because a one-shot iterator is used up before training. This must be fixed before any baseline run.
+- **Location relates to the class, modestly.** The association is moderate (Cramér's V = 0.30). Coordinates alone do not beat guessing the largest class on accuracy (0.36 at best vs 0.48), but macro F1 doubles compared with shuffled labels (0.26 vs 0.13).
+- **Flooding gives many nodes weak locations, and relations differ in how spatial they are.** Because of class hubs, 18.5% of nodes inherit every recognised geometry and end up at one point near the middle of the country. Monuments sharing a postal code or city sit 30 m and 370 m from their group's centre, while those sharing a build year or house number sit 66–73 km away, close to the national baseline of 75 km. This gives relation-aware flooding a measured relation list. Labelled monuments already have their own geometry, so it can only change the nodes around them, and that effect is not yet measured.

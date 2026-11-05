@@ -7,7 +7,18 @@ The project uses [uv](https://docs.astral.sh/uv/) with Python 3.12. To create th
 ```
 uv sync
 ```
-This covers data preparation and analysis. The dependencies of the original experiment code (`geo_rdf2vec.py`, `modeling/`, `geo_transe/`) are not included yet.
+This covers data preparation and analysis. The original experiment code (`modeling/`, `geo_transe/`) needs further dependencies, such as MLflow, that are not included yet.
+
+## Exploratory analysis of dmg777k
+The analysis is in [notebooks/dmg777k_eda.ipynb](notebooks/dmg777k_eda.ipynb), with its main outcomes in [reports/dmg777k_findings.md](reports/dmg777k_findings.md). To reproduce it, run:
+```
+uv sync
+uv run scripts/download_dmg777k.py
+uv run python data_preparation/dmg_data_prep.py
+uv run jupyter nbconvert --to notebook --execute --inplace notebooks/dmg777k_eda.ipynb
+```
+The last command rewrites the figures in [reports/figures](reports/figures) as PDF and PNG. Helper functions are in [src/dmg777k_eda](src/dmg777k_eda).
+
 
 ## Tracking of experiment runs
 In order to automate the experimentation deployment as well as the logging of our experiment results we use MLflow as a tracking platform. It uses a local host together with a SQLite database where the runs are stored. The models itself are stored in a folder on a file storage called artifact. Each experiment receives a unique identifier for further processing.
