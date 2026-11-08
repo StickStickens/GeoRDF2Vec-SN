@@ -213,9 +213,22 @@ def outgoing_tables(graph: Graph, weights: np.ndarray | None) -> tuple[np.ndarra
 
 
 def simulate_walks(
-    graph: Graph, starts: np.ndarray, steps: int, weights: np.ndarray | None, walks_per_start: int, seed: int
+    graph: Graph,
+    starts: np.ndarray,
+    steps: int,
+    weights: np.ndarray | None,
+    walks_per_start: int,
+    seed: int,
+    undirected: bool = False,
 ) -> list[list[int]]:
-    """Walks following igraph's random_walk defaults: outgoing edges only, stop at a dead end."""
+    """Walks following igraph's random_walk defaults: outgoing edges only, stop at a dead end.
+
+    With undirected=True every edge can also be walked backwards, with the same weight.
+    """
+    if undirected:
+        edges = np.array(graph.get_edgelist())
+        graph = Graph(n=graph.vcount(), edges=np.vstack([edges, edges[:, ::-1]]), directed=True)
+        weights = None if weights is None else np.concatenate([weights, weights])
     pointers, targets, step_weights = outgoing_tables(graph, weights)
     rng = np.random.default_rng(seed)
     walks = []

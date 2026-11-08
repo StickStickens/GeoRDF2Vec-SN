@@ -1,13 +1,12 @@
-"""Read dmg777k into tables and into the same igraph graph the repo's pipeline uses."""
+"""Read dmg777k into tables. Build the graph with eda.graph.build_graph."""
 
 from pathlib import Path
 
 import pandas as pd
-from igraph import Graph
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from ..paths import REPO_ROOT
+
 DATA_DIR = REPO_ROOT / "data" / "kgbench_dmg777k"
-FIGURES_DIR = REPO_ROOT / "reports" / "figures"
 SPLITS = {"train": "training", "valid": "validation", "test": "testing"}
 
 
@@ -31,12 +30,6 @@ def load_raw_triples(data_dir: Path = DATA_DIR) -> pd.DataFrame:
 def load_prepared_triples(data_dir: Path = DATA_DIR) -> pd.DataFrame:
     """Output of data_preparation/dmg_data_prep.py, read the way geo_rdf2vec.py reads it."""
     return pd.read_csv(data_dir / "full_triple_set.csv")
-
-
-def build_graph(triples: pd.DataFrame) -> Graph:
-    """Build the graph exactly as GeoRDF2Vec.read_kg_file does: nodes are identified by text."""
-    records = triples[["subject", "object", "predicate"]].to_records(index=False)
-    return Graph().TupleList(edges=records, directed=True, edge_attrs=["predicate"])
 
 
 def load_labels(raw_nodes: pd.DataFrame, data_dir: Path = DATA_DIR) -> pd.DataFrame:

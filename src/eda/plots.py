@@ -4,7 +4,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from .data import FIGURES_DIR
+from .paths import FIGURES_DIR
 
 SURFACE = "#fcfcfb"
 TEXT = "#0b0b0b"
