@@ -17,7 +17,16 @@ uv run scripts/download_dmg777k.py
 uv run python data_preparation/dmg_data_prep.py
 uv run jupyter nbconvert --to notebook --execute --inplace notebooks/dmg777k_eda.ipynb
 ```
-The last command rewrites the figures in [reports/figures](reports/figures) as PDF and PNG. Helper functions are in [src/dmg777k_eda](src/dmg777k_eda).
+The last command rewrites the figures in [reports/figures](reports/figures) as PDF and PNG. Helper functions are in [src/eda](src/eda): shared code (graph building, flooding, distances, walks, plotting) at the top level, and dataset loaders in `src/eda/dmg777k` and `src/eda/bgs`.
+
+## Exploratory analysis of BGS+
+Our second dataset is BGS+ (British Geological Survey, published by Wilcke et al., 2020): 146 rock units to classify as river or glacial deposits, in a graph of 916k triples with about 74k geometries. The analysis is in [notebooks/bgs_eda.ipynb](notebooks/bgs_eda.ipynb), with its main outcomes in [reports/bgs_findings.md](reports/bgs_findings.md). To reproduce it, run:
+```
+uv run scripts/download_bgs.py
+uv run python data_preparation/bgs_data_prep.py
+uv run jupyter nbconvert --to notebook --execute --inplace notebooks/bgs_eda.ipynb
+```
+The preparation step converts the geometries from British National Grid metres to WGS84 longitude and latitude, which `geo_rdf2vec.py` assumes. Figures are written to [reports/figures](reports/figures) with a `bgs_` prefix.
 
 
 ## Tracking of experiment runs
