@@ -16,7 +16,9 @@ def spatial_spread(triples: pd.DataFrame, locations: pd.DataFrame, min_subjects:
     For each (relation, object) shared by at least two located subjects, each subject's
     distance to the group's mean position. A small median means the relation links things
     that lie close together, e.g. a street; a large one means it does not, e.g. a class.
-    Same measure as in the EDA. Relations with fewer than min_subjects such subjects get no value.
+    Relations with fewer than min_subjects such subjects get no value.
+
+    Based on relation_dispersion in eda/spatial.py (same measure).
     """
     rows = triples.join(locations, on="subject", how="inner")
     groups = rows.groupby(["predicate", "object"])

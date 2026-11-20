@@ -18,13 +18,17 @@ from .load import WKT
 
 _GEOD = Geod(ellps="WGS84")
 _CRS_PREFIX = re.compile(r"^\s*<[^>]*>\s*")  # optional CRS IRI in front of a GeoSPARQL WKT literal
+# Copied from GeoRDF2Vec.extract_geometry in original/geo_rdf2vec.py
 AUTHORS_WKT_PATTERN = re.compile(
     r"(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)(\s?\(.+)(\))"
 )
 
 
 def geodesic_km(lon1, lat1, lon2, lat2) -> np.ndarray:
-    """Distance on the WGS84 ellipsoid, in kilometres. Scalars broadcast against arrays."""
+    """Distance on the WGS84 ellipsoid, in kilometres. Scalars broadcast against arrays.
+
+    Based on geodesic_km in eda/spatial.py.
+    """
     lon1, lat1, lon2, lat2 = np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (lon1, lat1, lon2, lat2)))
     _, _, metres = _GEOD.inv(lon1, lat1, lon2, lat2)
     return np.asarray(metres) / 1000
@@ -72,6 +76,7 @@ def own_locations(triples: pd.DataFrame, geometries: pd.DataFrame) -> pd.DataFra
     An entity has its own geometry if it links to a WKT literal directly, or through a
     geometry node (GeoSPARQL hasGeometry, then a WKT literal), as dmg777k monuments do.
     Every other node only gets a location through flooding, which is part of the experiments.
+    Re-implements the "own geometry" step of the EDA notebooks.
     """
     centroids = geometries.set_index("node")[["lon", "lat"]]  # triples must use node keys
     direct = triples.loc[triples["object"].isin(centroids.index), ["subject", "object"]]

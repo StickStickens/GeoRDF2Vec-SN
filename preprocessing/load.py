@@ -44,7 +44,10 @@ def normalise_kind(kind: pd.Series) -> pd.Series:
 
 
 def reproject_wkt(wkt: pd.Series, source_epsg: int) -> pd.Series:
-    """WKT in a projected CRS to WGS84 WKT in (longitude, latitude) order. Unparseable text becomes None."""
+    """WKT in a projected CRS to WGS84 WKT in (longitude, latitude) order. Unparseable text becomes None.
+
+    Based on reproject_wkt in data/bgs_data_prep.py, with the source CRS as a parameter.
+    """
     to_wgs84 = Transformer.from_crs(source_epsg, 4326, always_xy=True)
     geometries = shapely.from_wkt(wkt.to_numpy(), on_invalid="ignore")
     reprojected = shapely.transform(geometries, lambda xy: np.column_stack(to_wgs84.transform(xy[:, 0], xy[:, 1])))
@@ -52,7 +55,10 @@ def reproject_wkt(wkt: pd.Series, source_epsg: int) -> pd.Series:
 
 
 def load_dmg777k(data_dir: Path = DMG_DIR) -> Dataset:
-    """dmg777k from the raw KGBench files, with the authors' RD New to WGS84 conversion."""
+    """dmg777k from the raw KGBench files, with the authors' RD New to WGS84 conversion.
+
+    Follows original/data_preparation/dmg_data_prep.py and the loaders in eda/dmg777k/data.py.
+    """
     nodes = pd.read_csv(data_dir / "nodes.int.csv", dtype=str, keep_default_na=False).astype({"index": int})
     nodes = nodes.set_index("index")
     relations = pd.read_csv(data_dir / "relations.int.csv").set_index("index")["label"]

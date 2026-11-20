@@ -13,7 +13,7 @@ def split_table(labels: pd.DataFrame) -> pd.DataFrame:
 
 
 def label_checks(labels: pd.DataFrame, triples: pd.DataFrame, target_relations: tuple[str, ...]) -> pd.DataFrame:
-    """Each check with its count; every count should be 0."""
+    """Each check with its count; every count should be 0. Re-implements the leakage checks of the EDA notebooks."""
     in_graph = set(triples["subject"]) | set(triples["object"])
     target = triples["predicate"].map(lambda p: any(t in p for t in target_relations))
     checks = {
