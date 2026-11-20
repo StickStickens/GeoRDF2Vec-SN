@@ -5,7 +5,9 @@ geo_rdf2vec.py treats every WKT as WGS84 longitude/latitude, so all geometries a
 reprojected to EPSG:4326 here, as dmg_data_prep.py does for the RD New geometries.
 
 Outputs in data/bgs:
-    full_triple_set.csv  subject, predicate, object (literals as their lexical form)
+    full_triple_set.csv  subject, predicate, object (literals as their lexical form),
+                         object_kind (as in node_kinds.csv, but per triple, so a text used
+                         with two types keeps both; geo_rdf2vec.py reads only the first three)
     labels.csv           node, class, split
     node_kinds.csv       label, kind (entity, or the literal's datatype / language tag)
 """
@@ -85,7 +87,7 @@ def main() -> None:
     kinds["is_entity"] = kinds["kind"].eq("entity")
     kinds = kinds.sort_values("is_entity", ascending=False).drop_duplicates("label")[["label", "kind"]]
 
-    triples[["subject", "predicate", "object"]].to_csv(DATA_DIR / "full_triple_set.csv", index=False)
+    triples.rename(columns={"kind": "object_kind"}).to_csv(DATA_DIR / "full_triple_set.csv", index=False)
     kinds.to_csv(DATA_DIR / "node_kinds.csv", index=False)
     labels = load_labels()
     labels.to_csv(DATA_DIR / "labels.csv", index=False)

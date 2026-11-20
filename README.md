@@ -10,6 +10,7 @@ The repository is split by project stage. Each stage folder holds its own code, 
 | [original/](original) | | The authors' code, unchanged, so that the paper's results can be reproduced |
 | [data/](data) | Datasets | Download and preparation scripts for dmg777k and BGS+; the data itself is git-ignored |
 | [eda/](eda) | Milestone 2 | Exploratory analysis: notebooks, helper code, findings, report and figures |
+| [preprocessing/](preprocessing) | Milestone 3 | Preprocessing of both datasets for the experiments: notebooks, code and a summary |
 | [experiments/](experiments) | Milestone 4+ | Experiments and the evaluation plan |
 | `model/` | | Output folder of the authors' training code |
 

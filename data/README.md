@@ -19,4 +19,4 @@ The first script downloads the archive (397 MB, about 1 GB once unpacked) into `
 uv run data/download_bgs.py
 uv run python data/bgs_data_prep.py
 ```
-The first script downloads the files into `data/bgs` and verifies their checksums. The second is ours, because the authors' repository has no script for BGS+. It writes `full_triple_set.csv`, `labels.csv` and `node_kinds.csv`, and converts the geometries from British National Grid metres to WGS84 longitude and latitude, which `original/geo_rdf2vec.py` assumes.
+The first script downloads the files into `data/bgs` and verifies their checksums. The second is ours, because the authors' repository has no script for BGS+. It writes `full_triple_set.csv` (with each object's type, used by the preprocessing), `labels.csv` and `node_kinds.csv`, and converts the geometries from British National Grid metres to WGS84 longitude and latitude, which `original/geo_rdf2vec.py` assumes.
