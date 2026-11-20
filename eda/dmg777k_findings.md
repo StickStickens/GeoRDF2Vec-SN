@@ -1,6 +1,6 @@
 # dmg777k: main outcomes
 
-Full evidence is in [notebooks/dmg777k_eda.ipynb](../notebooks/dmg777k_eda.ipynb).
+Full evidence is in [dmg777k_eda.ipynb](dmg777k_eda.ipynb).
 
 - **The repo reproduces the paper's graph.** Its parsing gives 776,920 edges and an average degree of 4.6775, both exactly as in the paper. It gives 332,194 nodes, so the paper's 331,194 is probably a typo. The mean edge distance also matches (46.34 km vs 46.37 km), but only with the code's longitude and latitude swapped; the correct order gives 36.50 km. We could not reproduce the mean edge weight (0.763 vs 0.833).
 - **Walks are much shorter than the setting suggests.** In the code (the paper never states a direction), they follow outgoing edges only and stop at literals, so with a limit of 8 they average about 1.7 steps. This changes how our adaptive walk length idea should be framed.

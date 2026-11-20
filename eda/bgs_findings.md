@@ -1,6 +1,6 @@
 # BGS+: main outcomes
 
-Full evidence is in [notebooks/bgs_eda.ipynb](../notebooks/bgs_eda.ipynb). It mirrors the [dmg777k analysis](dmg777k_findings.md).
+Full evidence is in [bgs_eda.ipynb](bgs_eda.ipynb). It mirrors the [dmg777k analysis](dmg777k_findings.md).
 
 - **The task:** tell rock units laid down by rivers (FLUV, 93) from those laid down by ice (GLACI, 53), across 146 labelled units of the British Geological Survey's Lexicon. The graph has 916,199 triples and 274k nodes, about the size of dmg777k. The labels are few, so methods must be compared with repeated cross-validation, not one split.
 - **Location is a strong signal here, unlike in dmg777k.** Glacial deposits lie in the north: all 11 units north of 56°N are GLACI, and 38 of 40 south of 52°N are FLUV. Coordinates of a unit's reference site alone reach macro F1 0.87, against 0.47 with shuffled labels. In dmg777k the same test gave 0.26 against 0.13.
