@@ -7,8 +7,9 @@
 | Change | Why | dmg777k | BGS+ |
 |---|---|---|---|
 | A node is identified by its text **and** kind (entity, or the literal's datatype or language tag) | Identifying by text alone merges an entity with a literal of the same text, which creates self-loops, and merges different values, such as a monument number and a population | 9,075 wrong merges and 8,396 self-loops removed | 59,870 wrong merges and 58,689 self-loops removed |
-| Placeholder literals ("", "Not Entered", "Unknown", …) are removed | They mean "no value", yet become hubs that link unrelated entities | 204 triples (the same ones the authors' `dropna()` removes) | 33,685 triples |
+| Placeholder literals ("", "Not Entered", "Unknown", …) and empty geometries (`POLYGON EMPTY`) are removed | They mean "no value", yet become hubs that link unrelated entities | 204 triples (the same ones the authors' `dropna()` removes) | 33,687 triples |
 | A geometry is any WKT-typed literal, in any letter case | The authors' case-sensitive expression misses `Point(...)` | 21,208 geometries instead of 12,851 | 48,603 (no change) |
+| WKT keywords are written in capitals (`Point(` becomes `POINT(`) | WKT ignores letter case, but code that searches node text does not; no geometry occurs in both spellings, so nothing merges | 8,357 literals rewritten | none needed |
 | Coordinates are (longitude, latitude) throughout | The authors pass them to geopy swapped | Amsterdam–Utrecht 34.6 km instead of 39.4 km | same |
 
 The authors' steps are otherwise kept: dmg777k's RD New outlines are converted to WGS84 as in `dmg_data_prep.py`, and BGS+ is prepared the same way by `data/bgs_data_prep.py`. As a result, our dmg777k graph has 341,269 nodes instead of the paper's 332,194, with the same 776,920 triples. Reproducing the paper's numbers therefore uses the unchanged code in `original/`.

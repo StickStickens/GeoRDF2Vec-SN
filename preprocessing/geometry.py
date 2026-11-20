@@ -34,6 +34,18 @@ def geodesic_km(lon1, lat1, lon2, lat2) -> np.ndarray:
     return np.asarray(metres) / 1000
 
 
+def normalise_wkt(text: pd.Series) -> pd.Series:
+    """Write WKT keywords in capitals, e.g. 'Point(5 52)' as 'POINT(5 52)'.
+
+    WKT ignores letter case, so the geometry stays the same, but every reader that searches
+    node text, such as the authors' expression, now finds it. Only words of two or more
+    letters change, so numbers such as 5e-5 and a CRS IRI prefix are kept as they are.
+    """
+    parts = text.str.extract(r"^(\s*<[^>]*>\s*)?(.*)$", flags=re.DOTALL)
+    keywords = parts[1].str.replace(r"[A-Za-z]{2,}", lambda m: m.group(0).upper(), regex=True)
+    return parts[0].fillna("") + keywords
+
+
 def parse_wkt(text: pd.Series) -> np.ndarray:
     """Shapely geometries; None where the text is not valid WKT."""
     return shapely.from_wkt(text.str.replace(_CRS_PREFIX, "", regex=True).to_numpy(), on_invalid="ignore")
