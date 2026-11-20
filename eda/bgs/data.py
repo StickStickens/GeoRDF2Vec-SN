@@ -12,7 +12,9 @@ WKT_KIND = "http://www.opengis.net/ont/geosparql#wktLiteral"
 
 def load_triples(data_dir: Path = BGS_DIR) -> pd.DataFrame:
     """Subject, predicate, object text, in the form geo_rdf2vec.py reads."""
-    return pd.read_csv(data_dir / "full_triple_set.csv", dtype=str, keep_default_na=False)
+    return pd.read_csv(
+        data_dir / "full_triple_set.csv", usecols=["subject", "predicate", "object"], dtype=str, keep_default_na=False
+    )
 
 
 def load_node_kinds(data_dir: Path = BGS_DIR) -> pd.Series:
