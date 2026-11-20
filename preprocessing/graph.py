@@ -7,10 +7,12 @@ its text and kind instead, which is how RDF identifies terms.
 
 import pandas as pd
 
-from .load import ENTITY, PLAIN
+from .load import ENTITY, PLAIN, WKT
 
 # Texts that stand for "no value". Compared case-insensitively, without a trailing full stop.
 PLACEHOLDERS = frozenset({"", "not entered", "not defined", "unknown", "not known", "not applicable", "n/a"})
+# An empty WKT geometry, e.g. "POLYGON EMPTY", optionally after a CRS IRI: a geometry with no location.
+EMPTY_WKT = r"^\s*(?:<[^>]*>\s*)?[A-Za-z]+\s+EMPTY\s*$"
 
 
 def node_key(text: pd.Series, kind: pd.Series) -> pd.Series:
@@ -33,8 +35,12 @@ def is_placeholder(text: pd.Series) -> pd.Series:
 
 
 def drop_placeholders(triples: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Remove triples whose object is a literal meaning "no value". Returns the kept triples and what was removed."""
-    missing = triples["object_kind"].ne(ENTITY) & is_placeholder(triples["object"])
+    """Remove triples whose object is a literal meaning "no value": a placeholder text or an empty geometry.
+
+    Returns the kept triples and what was removed.
+    """
+    empty_wkt = triples["object_kind"].eq(WKT) & triples["object"].str.match(EMPTY_WKT, case=False)
+    missing = triples["object_kind"].ne(ENTITY) & (is_placeholder(triples["object"]) | empty_wkt)
     removed = (
         triples[missing]
         .groupby(["object", "predicate"])

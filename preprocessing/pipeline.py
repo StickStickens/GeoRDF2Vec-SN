@@ -33,9 +33,12 @@ class Result:
     checks: pd.DataFrame
 
 
-def fix_checks(dataset: Dataset, text_triples: pd.DataFrame, identity: pd.DataFrame, geometries: pd.DataFrame, counts: pd.Series) -> pd.DataFrame:
-    """Section 1.2: each problem the EDA found in the authors' pipeline, before and after our preprocessing."""
-    wkt_texts = pd.Series(text_triples.loc[text_triples["object_kind"].eq(WKT), "object"].unique())
+def fix_checks(dataset: Dataset, raw_wkt: pd.Series, identity: pd.DataFrame, geometries: pd.DataFrame, counts: pd.Series) -> pd.DataFrame:
+    """Section 1.2: each problem the EDA found in the authors' pipeline, before and after our preprocessing.
+
+    raw_wkt holds the WKT texts as the dataset writes them, before normalise_wkt.
+    """
+    not_capitals = lambda texts: int((texts != geometry.normalise_wkt(texts)).sum())  # noqa: E731
     lon_min, lat_min, lon_max, lat_max = dataset.bbox
     outside = ~geometries["lon"].between(lon_min, lon_max) | ~geometries["lat"].between(lat_min, lat_max)
     a, b, expected = AMSTERDAM_UTRECHT
@@ -44,7 +47,8 @@ def fix_checks(dataset: Dataset, text_triples: pd.DataFrame, identity: pd.DataFr
     # The authors pass (lon, lat) to geopy, which reads it as (lat, lon): longitude and latitude swap places.
     swapped = geometry.geodesic_km(shapely.get_y(pa), shapely.get_x(pa), shapely.get_y(pb), shapely.get_x(pb))
     rows = [
-        ("WKT literals recognised as geometries", geometry.authors_detection_count(wkt_texts), int(counts["Usable"]), f"all usable of {counts['WKT literals']:,}"),
+        ("WKT literals recognised as geometries", geometry.authors_detection_count(raw_wkt), int(counts["Usable"]), f"all usable of {counts['WKT literals']:,}"),
+        ("WKT literals with keywords not in capitals", not_capitals(raw_wkt), not_capitals(geometries["wkt"]), "0"),
         ("Geometry centres outside the country", None, int(outside.sum()), "0"),
         (f"Amsterdam–Utrecht distance, km (true {expected})", round(float(swapped), 1), round(float(ours), 1), f"{expected}"),
         ("Self-loops", int(identity.loc["Self-loops"].iloc[0]), int(identity.loc["Self-loops"].iloc[1]), "0"),
@@ -57,6 +61,9 @@ def fix_checks(dataset: Dataset, text_triples: pd.DataFrame, identity: pd.DataFr
 def run(name: str) -> Result:
     dataset = LOADERS[name]()
     text_triples, removed = graph.drop_placeholders(dataset.triples)
+    is_wkt = text_triples["object_kind"].eq(WKT)
+    raw_wkt = pd.Series(text_triples.loc[is_wkt, "object"].unique())
+    text_triples.loc[is_wkt, "object"] = geometry.normalise_wkt(text_triples.loc[is_wkt, "object"])
     identity = graph.identity_report(text_triples)
     triples = graph.keyed_triples(text_triples)
     geometries, counts = geometry.extract_geometries(text_triples)
@@ -73,7 +80,7 @@ def run(name: str) -> Result:
         hubs=catalog.hub_table(triples),
         splits=labels.split_table(dataset.labels),
         label_checks=labels.label_checks(dataset.labels, triples, dataset.target_relations),
-        checks=fix_checks(dataset, text_triples, identity, geometries, counts),
+        checks=fix_checks(dataset, raw_wkt, identity, geometries, counts),
     )
 
 
