@@ -28,7 +28,7 @@ def load_raw_triples(data_dir: Path = DATA_DIR) -> pd.DataFrame:
 
 
 def load_prepared_triples(data_dir: Path = DATA_DIR) -> pd.DataFrame:
-    """Output of data_preparation/dmg_data_prep.py, read the way geo_rdf2vec.py reads it."""
+    """Output of original/data_preparation/dmg_data_prep.py, read the way geo_rdf2vec.py reads it."""
     return pd.read_csv(data_dir / "full_triple_set.csv")
 
 

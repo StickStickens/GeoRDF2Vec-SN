@@ -5,8 +5,8 @@ The files live in Git LFS in the mmkg repository, so they are fetched through
 GitLab's raw URLs, which serve the LFS content rather than the pointer files.
 The main file's checksum equals the LFS object ID published in that repository.
 
-    uv run scripts/download_bgs.py          # skips files that are already present
-    uv run scripts/download_bgs.py --force  # downloads again
+    uv run data/download_bgs.py          # skips files that are already present
+    uv run data/download_bgs.py --force  # downloads again
 """
 
 import argparse

@@ -4,8 +4,8 @@
 Uses the same URL as the official kgbench-loader (kgbench/urls.py), without
 installing the loader, which depends on torch and torchvision.
 
-    uv run scripts/download_dmg777k.py          # skips work that is already done
-    uv run scripts/download_dmg777k.py --force  # downloads and unpacks again
+    uv run data/download_dmg777k.py          # skips work that is already done
+    uv run data/download_dmg777k.py --force  # downloads and unpacks again
 """
 
 import argparse
@@ -100,7 +100,7 @@ def main() -> int:
 
     extract(archive, dest)
 
-    # data_preparation/dmg_data_prep.py reads the triples uncompressed.
+    # original/data_preparation/dmg_data_prep.py reads the triples uncompressed.
     with gzip.open(dest / "triples.int.csv.gz", "rb") as source, (dest / "triples.int.csv").open("wb") as out:
         shutil.copyfileobj(source, out)
 

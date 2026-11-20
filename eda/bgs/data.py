@@ -1,4 +1,4 @@
-"""Read BGS+ as prepared by data_preparation/bgs_data_prep.py."""
+"""Read BGS+ as prepared by data/bgs_data_prep.py."""
 
 from pathlib import Path
 
