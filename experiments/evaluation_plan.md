@@ -4,7 +4,7 @@
 - **Learning setting: transductive.** Embeddings are learned once on the whole graph, test nodes included, with the target relation removed; only the classifier sees labels. RDF2Vec only gives vectors to nodes in the graph, and KGBench, the R-GCN/RDF2Vec benchmarks and the GeoRDF2Vec paper all use this setup, so our results stay comparable.
 
 ## Splits
-- **dmg777k: official KGBench splits** (4,394 train / 1,001 validation / 3,001 test). Tune on validation and use test once at the end. This matches the paper's Table 2, and 3,001 test nodes give stable estimates (about ±0.02).
+- **dmg777k: official KGBench splits** (5,394 train / 1,001 validation / 2,001 test). Tune on validation and use test once at the end. These are the same split files the authors' code reads (`original/modeling/dmg_hpt.py`), so our results stay comparable with the paper's Table 2. 2,001 test nodes give stable estimates (about ±0.02).
 - **BGS+: repeated stratified 5-fold cross-validation, 10 repeats, over training + validation (117 units).** With only 23 validation and 29 test units, one unit moves accuracy by 3–4 points. We also report the official test split, but only for comparison with published results.
 - **Random seeds: at least 5 embedding seeds per configuration.** Random walks and word2vec are stochastic, so a single run can't separate a method's effect from run-to-run noise.
 - **Robustness check: spatial block cross-validation.** We split by map region so test units lie far from training units. With spatially correlated labels, random splits can reward copying nearby labels rather than generalising (Roberts et al., 2017).
