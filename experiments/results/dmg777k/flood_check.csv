@@ -1,0 +1,3 @@
+dataset,variant,hidden,median_km,p90_km,at_national_centroid,without_location
+dmg777k,all relations (authors),10303,2.2800586869843458,7.355018468036633,0.0,0.0
+dmg777k,relation-aware,10303,2.1981023029637994,6.501613454172702,0.0,0.0

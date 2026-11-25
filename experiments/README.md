@@ -3,8 +3,10 @@
 | File | Contents |
 |---|---|
 | [evaluation_plan.md](evaluation_plan.md) | Learning setting, splits, metrics and compared methods |
-| [run.py](run.py) | Trains one configuration for some seeds and scores it on validation data |
-| `results/<dataset>/` | One JSON per run: configuration, seed, machine, timings, validation scores |
+| [run.py](run.py) | Trains configurations for some seeds and scores them on validation data; `--list` shows the configurations |
+| [geo.py](geo.py) | Relation-aware relation choice, flooding, spatial edge weights |
+| [flood_check.py](flood_check.py) | E2 without labels: hide known locations, flood, measure the error |
+| `results/<dataset>/` | One JSON per run (configuration, seed, machine, walk statistics, timings, validation scores), and `flood_check.csv` |
 
 Input data: `data/<dataset>/processed/`, written by [preprocessing](../preprocessing/README.md).
 
@@ -27,7 +29,7 @@ Found in the EDA and in a reading of `original/geo_rdf2vec.py`. Keep `original/`
 1. **Word2vec trains on nothing.** In `kg_training`, `corpus` is an iterator that `build_vocab` uses up, so `train` sees 0 words. `corpus = list(...)` fixes it, but holding every walk in memory does not fit in 16 GB once walks go both ways. We write walks to a text file and train with gensim's `corpus_file`.
 2. **Longitude and latitude are swapped.** `extract_point_coordinates` returns (lon, lat), but geopy expects (lat, lon). Amsterdam–Utrecht comes out as 39.4 km instead of 34.6 km.
 3. **Geometry detection is case-sensitive** and misses `Point(...)` on the raw dmg777k data. No change needed: our preprocessing writes WKT keywords in capitals.
-4. **The min-max edge weights are wrong and too slow.** Each edge is weighted once from each end, and the last write wins. The loop filters the whole edge table for every node (about 341k × 777k operations). The EDA has a vectorised version (`repo_minmax_weights` in [eda/spatial.py](../eda/spatial.py)).
+4. **The min-max edge weights are wrong and too slow.** Each edge is weighted once from each end, and the last write wins. The loop filters the whole edge table for every node (about 341k × 777k operations). Our fix (`minmax_weights` in [geo.py](geo.py)) normalises at each node over the edges a walk can take next, so an edge has one weight per direction it is walked in. The published variant keeps the authors' behaviour (`authors_minmax_weights`, identical to the EDA's checked `repo_minmax_weights` on all 916k BGS+ edges).
 
 **Walks**
 
@@ -45,6 +47,8 @@ Each experiment changes one factor against a fixed base. Factors that help are t
 
 **Base, "GeoRDF2Vec fixed":** our preprocessed graph, bugs 1, 2 and 4 fixed, the authors' flooding and min-max weights, forward walks, 100 walks of depth 8 per node.
 
+E0 showed walks through literals (E1 (b)) to be best on both datasets without geography (macro F1 0.677 vs 0.627 forward on dmg777k, 0.761 vs 0.548 on BGS+), so E2–E7 are configured on E1 (b) walks with geography. The E1 runs with geography (`geo_forward`, `geo_both`, `geo_through_literals`) check that this holds.
+
 | # | Experiment | Variants | Configs |
 |---|---|---|---|
 | E0 | Baselines | majority class and kNN on coordinates (no embedding); RDF2Vec with uniform walks, forward as the authors walk and with each of E1's two walk rules (this separates the effect of direction from that of geography); GeoRDF2Vec as published, with only bug 1 fixed | 4 |
@@ -53,7 +57,7 @@ Each experiment changes one factor against a fixed base. Factors that help are t
 | E2 | Relation-aware flooding | only relations whose objects lie close together (from `relations.csv`) pass on locations; also checked without labels, see below | 1 |
 | E3 | **Hub removal** | remove the top k hubs, k ∈ {10, 50} | 2 |
 | E4 | **Degree down-weighting** | edge weight × degree(target)^−α, α ∈ {0.5, 1} | 2 |
-| E5 | **Language tags** | strip language tags, so `"Amsterdam"@nl` and `"Amsterdam"@en` become one node | 1 |
+| E5 | **Language tags** | strip language tags, so literals with identical text become one node. Translations (`"kerk"@nl`, `"church"@en`) are not merged. Both datasets are almost monolingual, so the merges join tagged and untagged copies of the same string: on dmg777k 266 groups, mostly municipality names such as `"Aalsmeer"@nl` and `"Aalsmeer"`, only 5 of them across two languages; on BGS+ 20 groups of codes. 753 and 4,034 triples are affected, so a small effect is expected | 1 |
 | E6 | **Walks per geo-located node** | {50, 200} walks for nodes with a location, against 100 in the base | 2 |
 | E7 | Adaptive walk length | the four rules below, on walks of type E1 (b) | 4 |
 | E8 | Best combination | winners of E1–E7 together; E3 with E4, since both target hubs; spatial block cross-validation as a robustness check | ~2 |
@@ -62,7 +66,57 @@ About 21 configurations × 5 seeds × 2 datasets ≈ **210 word2vec trainings**.
 
 **Order.** E1 runs first. Forward walks end after about 1.7 steps, so E6 and E7 only mean something once walks can go both ways. E2–E6 then build on the walk type E1 picks; E7 always uses E1 (b). E2's label-free check can run before any training.
 
-**Flooding check (E2, no labels).** Hide known geometries (20% of dmg777k monuments; all 3,290 BGS+ stratotypes), re-run flooding, and measure the median and 90th-percentile distance error, the share placed in the correct municipality (dmg777k), and the share placed at the national centroid.
+### Configurations
+
+| # | Configurations (`run.py`) |
+|---|---|
+| E0 | `rdf2vec_forward`, `rdf2vec_both`, `rdf2vec_through_literals` (done), `geo_published` |
+| Base, E1 | `geo_forward`, `geo_both`, `geo_through_literals` |
+| E2 | `geo_relation_aware` |
+| E3 | `geo_hubs10`, `geo_hubs50` |
+| E4 | `geo_degree05`, `geo_degree1` |
+| E5 | `geo_nolang` |
+| E6 | `geo_walks50`, `geo_walks200` |
+| E7 | `geo_len_cap`, `geo_len_soft`, `geo_len_budget`, `geo_len_unreliable` |
+
+Choices made in the code, open to change:
+
+- **Relation-aware flooding (E2).** A relation passes on locations if the located subjects sharing one of its objects lie within 0.4 × the dataset's baseline spread of their group centre (30 km on dmg777k, 99 km on BGS+), or, where too few subjects are located to measure this, if its objects are shared by at most 20 subjects on average. WKT relations always pass. 0.4 is a hand-picked value: it reproduces the EDA's hand-made BGS+ list (0.5 keeps ages, colours and map codes at 106–123 km; 0.33 drops `hasLexicon` at 85 km, which links the map to the rock units). It uses no labels, and the sensitivity check below shows that every value from 0.35 to 0.42 gives the same relations on both datasets, with no worse flooding anywhere from 0.05 to 0.45. This keeps 40 of 60 relations on dmg777k and 70 of 103 on BGS+. 18% of dmg777k nodes, reachable only through dropped relations, get no location; edges at them count as distance 0, as in the authors' code.
+- **Unreliable node (E7, rule 3):** flooding gave it more than half of all geometries. That is 17% of dmg777k nodes and 53% of BGS+ nodes with the authors' flooding (EDA: 18.5% and 50.3% inherit all of them), and none after relation-aware flooding or after removing the top 10 hubs.
+- **Length rules (E7):** *d* = 0.4 × the baseline spread, the same 30 km / 99 km. A walk ends before a step that breaks rules 1, 2 and 4, and right after stepping onto an unreliable node for rule 3. Walks then average about 4–5 steps instead of 8.
+- **Geo-located node (E6):** an entity with its own geometry (31,169 on dmg777k, 22,784 on BGS+). After flooding every node has a location, so "located" has to mean its own.
+- **Hub removal (E3)** removes the k highest-degree nodes, skipping any labelled node and any hub whose removal would leave a labelled node without edges (`select_hubs`; skipped hubs are listed in the result as `hubs_skipped`). The only node skipped is `monument/8336` on dmg777k (hub 46, degree 1,105), which is itself a labelled monument; the top-50 list then takes hub 51 instead. Without this rule the monument itself would be removed, and it would get a zero vector. No other labelled node loses its edges, and every labelled node stays in the largest connected component for k ≤ 50 on both datasets. The nodes that do lose all their edges were attached only to a hub, e.g. on dmg777k 57,834 images and geometries whose only edge is `rdf:type` to `Afbeelding` or `Geometry`.
+
+### Flooding check (E2, no labels)
+
+Hide known locations in 5 folds, flood again, and measure where flooding puts them ([flood_check.py](flood_check.py)): on dmg777k the `hasGeometry` links of the 10,303 entities with their own geometry, on BGS+ the `hasStratotype` links of the 3,290 units with a stratotype (truth: the mean location of their stratotypes).
+
+| Dataset | Flooding | Median error | 90th percentile | At the national centroid |
+|---|---|---|---|---|
+| dmg777k | all relations (authors) | 2.3 km | 7.4 km | 0% |
+| dmg777k | relation-aware | 2.2 km | 6.5 km | 0% |
+| BGS+ | all relations (authors) | 238 km | 480 km | 98% |
+| BGS+ | relation-aware | 32 km | 224 km | 0% |
+
+On BGS+, relation-aware flooding removes the national-centroid problem for these units, as in the EDA (389 → 59 km on its 97 labelled units). On dmg777k it changes little: hidden monuments still get their location from their address and city. The share placed in the correct municipality is not measured yet.
+
+**Sensitivity to the 0.4 spread fraction** (`flood_check.py --sweep`, written to `flood_sweep.csv`; one row per distinct set of passing relations, so each fraction stands for a range):
+
+| Dataset | Spread fraction | Median error | 90th percentile | At the national centroid | Nodes with a location |
+|---|---|---|---|---|---|
+| dmg777k | 0.05–0.8 (incl. 0.4) | 2.2 km | 6.5 km | 0% | 81.5–82.1% |
+| dmg777k | 1.0 | 2.3 km | 7.3 km | 0% | 82.5% |
+| BGS+ | 0.05–0.34 (without `hasLexicon`) | 30 km | 234 km | 0% | 80.9% |
+| BGS+ | 0.35–0.42 (incl. 0.4) | 32 km | 224 km | 0% | 98.0% |
+| BGS+ | 0.45 (adds map codes) | 32 km | 224 km | 0% | — |
+| BGS+ | 0.5–0.8 (adds colours, ages, rock class) | 99 km | 353 km | 0% | 98.1% |
+| BGS+ | 1.0 | 105 km | 371 km | 13% | 98.2% |
+
+The labelled nodes get a location at every fraction. On dmg777k the fraction hardly matters. On BGS+ there is a cliff between 0.45 and 0.5, where colours (0.45), ages (0.47–0.48) and the rock class (0.49) start to pass: the median error triples, and 3.6% of nodes (8% at 1.0) inherit more than half of all geometries again. Values from 0.35 to 0.45 are equally good. Below 0.34 the error stays the same, but `hasLexicon` drops out and 17% of BGS+ nodes get no location.
+
+`isStratotypeFor` points to separate `…/ref/Lexicon/NamedRockUnit/…` nodes, not to the `…/id/…` units that carry the labels, so only `hasStratotype` links are hidden.
+
+**Spatial weights do bias the walks.** On BGS+ walks of type E1 (b), the median distance from the start after 8 steps is 2 km with our min-max weights against 61 km with uniform walks.
 
 ### Adaptive walk length (E7)
 
@@ -108,11 +162,11 @@ Measured on this PC (Ryzen 5 3600X, 6 cores / 12 threads), word2vec with 200 dim
 | Walks | dmg777k | BGS+ |
 |---|---|---|
 | Forward, from all nodes (authors) | 23 min (53 min if one-token walks are kept) | about 20 min, estimated from dmg777k (45 min if kept, measured) |
-| Both ways through literals, from entities (E1 (b)) | 15 min (full run; 17 min extrapolated) | 11 min |
-| E1 (a), ending at the first literal | about 8 min, estimated from the token count | about 6 min, estimated |
+| Both ways through literals, from entities (E1 (b)) | 18 min (measured on 5 seeds) | 17 min on the M1 |
+| E1 (a), ending at the first literal | 20 min (measured: short walks are slow per token) | 16 min on the M1 |
 
 - **Skip one-token walks.** Most forward walks start at a literal and stop at once. They give word2vec no training pairs but cost half its time, so we drop them; the vectors of the labelled nodes are unaffected.
-- **Total compute.** 210 runs × about 15 min ≈ 53 h on the PC, an upper bound since E1 (a) walks are shorter than in the benchmark; E1 (b) walks are as long as there. With the MacBook Air M1 as a second machine that is roughly 1–1.5 days of running, done overnight. The M1 is not measured yet: run the benchmark there first, since a fanless laptop slows down under hours of full load.
+- **Total compute.** About 20 min per run on both machines. The 16 geographic configurations are 80 runs per dataset, about 27 h on each machine in parallel. Flooding takes 7–60 s per variant and is cached in `data/<dataset>/runs/_flood/`.
 - **Splitting the work.** Run all seeds of a configuration on the same machine, and log the machine with each run.
 - **Fallback.** If runs take longer than this, compare variants with 3 seeds and use 5 only for the final table.
 
@@ -120,7 +174,7 @@ Measured on this PC (Ryzen 5 3600X, 6 cores / 12 threads), word2vec with 200 dim
 
 Every (dataset, configuration, seed) is an independent run. The standing split is **dmg777k on the PC, BGS+ on the MacBook**: BGS+ runs are shorter, which suits the slower, fanless laptop, and each machine only needs one dataset.
 
-- The PC needs `data/kgbench_dmg777k/processed/`. The Mac needs only `data/bgs/processed/` (74 MB), copied from the PC, so it skips the BGS+ download and preparation.
+- The PC needs `data/kgbench_dmg777k/processed/` and `full_triple_set.csv`. The Mac needs `data/bgs/processed/` (74 MB), `data/bgs/full_triple_set.csv` (189 MB, read by `geo_published`) and, to skip recomputing it, the flooding cache `data/bgs/runs/_flood/` (45 MB), all copied from the PC.
 - Run all seeds of a configuration on one machine. Each result records the machine name.
 - A run whose result file exists is skipped, so after an interruption re-run the same command.
 - To merge, copy `experiments/results/bgs/` from the Mac into the PC's checkout.
@@ -130,7 +184,7 @@ Every (dataset, configuration, seed) is an independent run. The standing split i
 
 | Dates | Work |
 |---|---|
-| 24–26 Nov | Pipeline: one config → graph variant → flooding → edge weights → walker → walks file → word2vec → classifier → one results row (config, seed, machine, metrics). Check: "GeoRDF2Vec as published" lands near the paper's Table 2. Benchmark the M1. In parallel: the E2 flooding check, and a preprocessing variant without language tags (E5). |
+| 24–25 Nov | Pipeline and geography (done); E0 without geography (done); E2 flooding check (done) |
 | 27 Nov – 1 Dec | E0–E7 |
 | 2–3 Dec | E8 and the spatial block cross-validation |
 | 4–5 Dec | Results tables and write-up |
