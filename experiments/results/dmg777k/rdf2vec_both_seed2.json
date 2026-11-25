@@ -1,0 +1,33 @@
+{
+  "dataset": "dmg777k",
+  "config": "rdf2vec_both",
+  "seed": 2,
+  "params": {
+    "walks_per_node": 100,
+    "depth": 8,
+    "vector_size": 200,
+    "window": 5,
+    "epochs": 10,
+    "direction": "both",
+    "start": "entities"
+  },
+  "smoke": false,
+  "machine": "Rain",
+  "platform": "Linux-7.2.7-arch1-1-x86_64-with-glibc2.44",
+  "cpus": 12,
+  "start_nodes": 148127,
+  "tokens": 83167426,
+  "timings": {
+    "graph_s": 2.3389127254486084,
+    "walks_s": 48.81584358215332,
+    "word2vec_s": 1196.4277322292328,
+    "classifier_s": 30.251097917556763
+  },
+  "validation": {
+    "protocol": "train->valid",
+    "macro_f1": 0.6526033229470516,
+    "accuracy": 0.7072927072927073,
+    "mcc": 0.5827691881571543,
+    "C": 0.01
+  }
+}

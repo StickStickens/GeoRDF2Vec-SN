@@ -1,0 +1,35 @@
+{
+  "dataset": "bgs",
+  "config": "rdf2vec_forward",
+  "seed": 4,
+  "params": {
+    "walks_per_node": 100,
+    "depth": 8,
+    "vector_size": 200,
+    "window": 5,
+    "epochs": 10,
+    "direction": "forward",
+    "start": "all"
+  },
+  "smoke": false,
+  "machine": "noNScops-MacBook-Air.local",
+  "platform": "macOS-14.4-arm64-arm-64bit",
+  "cpus": 8,
+  "start_nodes": 333824,
+  "tokens": 29691952,
+  "timings": {
+    "graph_s": 1.8984031677246094,
+    "walks_s": 15.876791715621948,
+    "word2vec_s": 632.5027408599854,
+    "classifier_s": 2.831033229827881
+  },
+  "validation": {
+    "protocol": "5-fold x10 CV on train+valid",
+    "macro_f1": 0.5759721207394969,
+    "macro_f1_std": 0.0983082370431008,
+    "accuracy": 0.6311956521739129,
+    "accuracy_std": 0.09381538873167466,
+    "mcc": 0.18385284353619846,
+    "mcc_std": 0.2060062855685316
+  }
+}
