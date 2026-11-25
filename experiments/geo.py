@@ -25,7 +25,7 @@ from preprocessing.load import WKT
 # which links the map to the rock units.
 SPREAD_FRACTION = 0.4
 MAX_SHARING = 20
-# A node is "unreliable" (E7, rule 4) if flooding gave it more than this share of all geometries,
+# A node is "unreliable" (E7, rule 3) if flooding gave it more than this share of all geometries,
 # which puts it near the national centroid.
 UNRELIABLE_SHARE = 0.5
 
