@@ -60,7 +60,7 @@ E0 showed walks through literals (E1 (b)) to be best on both datasets without ge
 | E5 | **Language tags** | strip language tags, so literals with identical text become one node. Translations (`"kerk"@nl`, `"church"@en`) are not merged. Both datasets are almost monolingual, so the merges join tagged and untagged copies of the same string: on dmg777k 266 groups, mostly municipality names such as `"Aalsmeer"@nl` and `"Aalsmeer"`, only 5 of them across two languages; on BGS+ 20 groups of codes. 753 and 4,034 triples are affected, so a small effect is expected | 1 |
 | E6 | **Walks per geo-located node** | {50, 200} walks for nodes with a location, against 100 in the base | 2 |
 | E7 | Adaptive walk length | the four rules below, on walks of type E1 (b) | 4 |
-| E8 | Best combination | winners of E1–E7 together; E3 with E4, since both target hubs; spatial block cross-validation as a robustness check | ~2 |
+| E8 | Best combination | the factors that did not hurt on either dataset together (E1 (b), E2, E5), with and without E3's 10-hub removal. E4 (degree down-weighting) and E7 hurt on both datasets, so they are left out. Spatial block cross-validation as a robustness check | 2 |
 
 About 21 configurations × 5 seeds × 2 datasets ≈ **210 word2vec trainings**.
 
@@ -78,6 +78,8 @@ About 21 configurations × 5 seeds × 2 datasets ≈ **210 word2vec trainings**.
 | E5 | `geo_nolang` |
 | E6 | `geo_walks50`, `geo_walks200` |
 | E7 | `geo_len_cap`, `geo_len_soft`, `geo_len_budget`, `geo_len_unreliable` |
+| E7 control | `geo_depth4`: E1 (b) walks with geography, depth 4 instead of 8, about as long as the length rules make them |
+| E8 | `geo_best`: E1 (b) walks, relation-aware flooding, language tags stripped (the factors that did not hurt on either dataset); `geo_best_hubs10`: the same with the top 10 hubs removed (helped dmg777k, hurt BGS+) |
 
 Choices made in the code, open to change:
 
@@ -139,6 +141,8 @@ All four rules are tested:
 4. **Distance budget:** stop once the summed length of the steps exceeds *d* km. Unlike 1, this also stops walks that wander back and forth near the start.
 
 *d* is set per dataset from the EDA distances, since BGS+ covers a larger area than dmg777k.
+
+**Results so far.** All four rules lower macro F1, except rule 3 on dmg777k. Rule 3 cuts dmg777k walks about as much as the distance rules do (4.4 steps against 4.0–4.1), yet it scores like full-length walks (0.682 against 0.672). The distance rules score 0.47–0.52. So on dmg777k the loss seems to come from which steps the distance rules cut, the long jumps to distant monuments that share a photographer or collection, rather than from shorter walks as such. `geo_depth4` tests this: uniformly short walks with no distance rule.
 
 ### Classifier
 

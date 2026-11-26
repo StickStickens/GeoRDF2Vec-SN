@@ -84,6 +84,11 @@ CONFIGS = {
     "geo_len_soft": {**GEO, **TL, "length_rule": "soft"},
     "geo_len_budget": {**GEO, **TL, "length_rule": "budget"},
     "geo_len_unreliable": {**GEO, **TL, "length_rule": "unreliable"},
+    # E7 control: uniformly short walks, about as long as the length rules make them
+    "geo_depth4": {**GEO, **TL, "depth": 4},
+    # E8: the factors that did not hurt on either dataset, with and without hub removal
+    "geo_best": {**TL, "flood": "relation_aware", "weights": "minmax", "strip_lang": True},
+    "geo_best_hubs10": {**TL, "flood": "relation_aware", "weights": "minmax", "strip_lang": True, "drop_hubs": 10},
 }
 C_GRID = [0.001, 0.01, 0.1, 1, 10]
 CHUNK_STARTS = 20_000  # start nodes per batch of walks, to bound memory

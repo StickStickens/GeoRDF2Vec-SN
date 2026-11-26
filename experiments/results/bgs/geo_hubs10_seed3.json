@@ -1,0 +1,56 @@
+{
+  "dataset": "bgs",
+  "config": "geo_hubs10",
+  "seed": 3,
+  "params": {
+    "walks_per_node": 100,
+    "depth": 8,
+    "vector_size": 200,
+    "window": 5,
+    "epochs": 10,
+    "graph": "ours",
+    "direction": "through_literals",
+    "return_at_dead_end": true,
+    "start": "entities",
+    "flood": "all",
+    "weights": "minmax",
+    "degree_alpha": 0.0,
+    "drop_hubs": 10,
+    "strip_lang": false,
+    "geo_walks_per_node": null,
+    "length_rule": null,
+    "length_km": null
+  },
+  "smoke": false,
+  "machine": "noNScops-MacBook-Air.local",
+  "platform": "macOS-14.4-arm64-arm-64bit",
+  "cpus": 8,
+  "start_nodes": 103046,
+  "tokens": 175178200,
+  "info": {
+    "hubs_skipped": [],
+    "flood_variant": "ours_all_hubs10_lang0_keeplabelled",
+    "seeds": 48603,
+    "located_share": 1.0,
+    "unreliable_share": 0.09504978969694791,
+    "mean_walk_steps": 8.0,
+    "full_length_share": 1.0,
+    "labelled_without_vector": 0
+  },
+  "timings": {
+    "graph_s": 2.938300848007202,
+    "geography_s": 0.43564891815185547,
+    "walks_s": 90.92904090881348,
+    "word2vec_s": 994.467523097992,
+    "classifier_s": 2.6742289066314697
+  },
+  "validation": {
+    "protocol": "5-fold x10 CV on train+valid",
+    "macro_f1": 0.7545965626504713,
+    "macro_f1_std": 0.09473626738277972,
+    "accuracy": 0.7829710144927537,
+    "accuracy_std": 0.08032535970070784,
+    "mcc": 0.5296143116526754,
+    "mcc_std": 0.18571825480780513
+  }
+}

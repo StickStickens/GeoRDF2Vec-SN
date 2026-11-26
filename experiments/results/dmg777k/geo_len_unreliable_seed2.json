@@ -1,0 +1,54 @@
+{
+  "dataset": "dmg777k",
+  "config": "geo_len_unreliable",
+  "seed": 2,
+  "params": {
+    "walks_per_node": 100,
+    "depth": 8,
+    "vector_size": 200,
+    "window": 5,
+    "epochs": 10,
+    "graph": "ours",
+    "direction": "through_literals",
+    "return_at_dead_end": true,
+    "start": "entities",
+    "flood": "all",
+    "weights": "minmax",
+    "degree_alpha": 0.0,
+    "drop_hubs": 0,
+    "strip_lang": false,
+    "geo_walks_per_node": null,
+    "length_rule": "unreliable",
+    "length_km": null
+  },
+  "smoke": false,
+  "machine": "Rain",
+  "platform": "Linux-7.2.7-arch1-1-x86_64-with-glibc2.44",
+  "cpus": 12,
+  "start_nodes": 148127,
+  "tokens": 143860094,
+  "info": {
+    "flood_variant": "ours_all_hubs0_lang0",
+    "seeds": 21208,
+    "located_share": 1.0,
+    "unreliable_share": 0.1694792084836302,
+    "length_km": 30.087921820118822,
+    "mean_walk_steps": 4.355971362411984,
+    "full_length_share": 0.40046041572434465,
+    "labelled_without_vector": 0
+  },
+  "timings": {
+    "graph_s": 3.7636420726776123,
+    "geography_s": 2.8884434700012207,
+    "walks_s": 97.45242595672607,
+    "word2vec_s": 1168.3057389259338,
+    "classifier_s": 27.84489130973816
+  },
+  "validation": {
+    "protocol": "train->valid",
+    "macro_f1": 0.6832338463720016,
+    "accuracy": 0.7372627372627373,
+    "mcc": 0.6069022090194611,
+    "C": 0.001
+  }
+}
