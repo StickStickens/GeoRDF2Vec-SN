@@ -1,97 +1,177 @@
-# Experiments (Milestone 4+)
+# Experiments (Milestone 4)
+
+We re-implemented GeoRDF2Vec, fixed the bugs we found in the authors' code, and tested nine ideas for handling hubs, locations and walks (E0–E8) on dmg777k and BGS+. Every configuration was trained with 5 seeds. In total that is 22 configurations × 5 seeds × 2 datasets = 220 embeddings.
 
 | File | Contents |
 |---|---|
-| [evaluation_plan.md](evaluation_plan.md) | Learning setting, splits, metrics and compared methods |
-| [run.py](run.py) | Trains configurations for some seeds and scores them on validation data; `--list` shows the configurations |
-| [geo.py](geo.py) | Relation-aware relation choice, flooding, spatial edge weights |
-| [flood_check.py](flood_check.py) | E2 without labels: hide known locations, flood, measure the error |
-| `results/<dataset>/` | One JSON per run (configuration, seed, machine, walk statistics, timings, validation scores), and `flood_check.csv` |
+| [evaluation_plan.md](evaluation_plan.md) | Learning setting, splits, metrics and compared methods, as planned |
+| [run.py](run.py) | Builds the graph, floods geometries, generates walks, trains word2vec and scores on validation; `--list` shows the configurations |
+| [geo.py](geo.py) | Relation-aware flooding, flooding, spatial edge weights |
+| [flood_check.py](flood_check.py) | Label-free check of flooding: hide known locations, flood, measure the error (`--sweep` for the threshold sensitivity) |
+| [evaluate.py](evaluate.py) | Scores the saved vectors again without retraining: baselines, random vs spatial block cross-validation, test set (`--test`) |
+| `results/<dataset>/` | One JSON per run (parameters, machine, walk statistics, timings, validation scores); `flood_check.csv`, `flood_sweep.csv`, `spatial_cv.csv`, `final_test.csv` |
 
-Input data: `data/<dataset>/processed/`, written by [preprocessing](../preprocessing/README.md).
+Input: `data/<dataset>/processed/`, written by [preprocessing](../preprocessing/README.md). Vectors of the labelled nodes: `data/<dataset>/runs/<config>/<config>_seed<k>.npz`.
 
-Milestone 4 is due on 7 December. We aim to finish **all** experiments in it, not only a first iteration.
+## Summary
 
-## Left to the experiments
+- **Fixing the method matters far more than any geographic addition.** Our best configuration beats GeoRDF2Vec as published by 0.13 macro F1 on the dmg777k test set (0.691 vs 0.564) and by 0.20 on the BGS+ test set (0.758 vs 0.561). Most of this comes from letting walks pass through literals in both directions (E1). Our other fixes, kept with forward walks, do not help on their own (0.610 → 0.597 on dmg777k, 0.592 → 0.529 on BGS+, validation).
+- **Geography itself adds little.** With the same walks, adding the authors' flooding and spatial weights changes macro F1 by −0.005 on dmg777k and +0.012 on BGS+ (validation).
+  - On dmg777k, our best combination, `geo_best_hubs10`, beats RDF2Vec without geography on the official split: +0.028 on validation, +0.029 on test. That gain does not appear in cross-validation over train + valid (+0.001).
+  - On BGS+, every top configuration is within noise of RDF2Vec, and on its 29 test nodes RDF2Vec scores highest.
+- **Location carries little class information on dmg777k. On BGS+ it carries a lot, but only locally.**
+  - On BGS+, kNN on coordinates alone scores 0.789 under random folds, more than any embedding. On unseen map regions it falls to 0.536.
+  - The embeddings lose much less on unseen regions: 0.02–0.03 on dmg777k and 0.10–0.14 on BGS+.
+- **Relation-aware flooding fixes the flooding** (BGS+ median error 238 → 32 km, no nodes left at the national centroid), but it hardly changes classification (+0.016 and −0.001).
+- **Hubs carry class information.** Down-weighting high-degree nodes (E4) costs 0.11–0.19 macro F1, and removing 50 hubs costs 0.08 on dmg777k. Removing only the top 10 is neutral on its own and helps in combination.
+- **Adaptive walk length (E7) hurts.** Stopping walks after they travel *d* km costs 0.08–0.20. On dmg777k, a control with uniformly short walks loses only 0.014. So the loss comes from the long jumps the distance rules cut, which link a monument to distant monuments of the same photographer or collection.
 
-Preprocessing makes no modelling decisions. Decided here:
+## Setup
 
-- walk direction and start nodes,
-- which relations pass on locations during flooding, and what to do with hubs (`relations.csv` and `hubs.csv` describe them),
-- flooding and edge weights.
+**Graph.** Our preprocessed triples, with the target relation removed. A node is an entity or a literal. Embeddings never see labels (transductive setting, see [evaluation_plan.md](evaluation_plan.md)).
 
-## What the authors' code does, and what we change
+**Walks.** A vectorised walker in [run.py](run.py), 100 walks of depth 8 per start node.
+- *Forward* walks follow edges as stored and start at every node, as in the authors' code.
+- *Both-way* walks start at entities, add inverse edges and never step straight back (up to 10 redraws). There are two variants:
+  - (a) inverse edges only between entities, so a walk ends at the first literal;
+  - (b) inverse edges for every edge, so walks pass through literals, and a walk steps back only at a dead end.
+- Walks of one token are dropped: they give word2vec no training pairs.
 
-Found in the EDA and in a reading of `original/geo_rdf2vec.py`. Keep `original/` unchanged for reproducing the paper. Our pipeline is new code in `experiments/`.
+**Geography.** Geometries are spread to nodes without one by flooding (multi-source breadth-first search, as in the authors' `neighborhood_flood`). A node's location is the centroid of the geometries it inherits. A walk steps along an edge with probability proportional to exp(−scaled distance), min-max scaled over the edges available at the current node.
 
-**Bugs**
+**word2vec.** gensim CBOW, 200 dimensions, window 5, 10 epochs, `min_count` 0, trained from a walk file (`corpus_file`).
 
-1. **Word2vec trains on nothing.** In `kg_training`, `corpus` is an iterator that `build_vocab` uses up, so `train` sees 0 words. `corpus = list(...)` fixes it, but holding every walk in memory does not fit in 16 GB once walks go both ways. We write walks to a text file and train with gensim's `corpus_file`.
-2. **Longitude and latitude are swapped.** `extract_point_coordinates` returns (lon, lat), but geopy expects (lat, lon). Amsterdam–Utrecht comes out as 39.4 km instead of 34.6 km.
-3. **Geometry detection is case-sensitive** and misses `Point(...)` on the raw dmg777k data. No change needed: our preprocessing writes WKT keywords in capitals.
-4. **The min-max edge weights are wrong and too slow.** Each edge is weighted once from each end, and the last write wins. The loop filters the whole edge table for every node (about 341k × 777k operations). Our fix (`minmax_weights` in [geo.py](geo.py)) normalises at each node over the edges a walk can take next, so an edge has one weight per direction it is walked in. The published variant keeps the authors' behaviour (`authors_minmax_weights`, identical to the EDA's checked `repo_minmax_weights` on all 916k BGS+ edges).
+**Classifier and protocols.** Standardised vectors, logistic regression, C ∈ {0.001, 0.01, 0.1, 1, 10}. Primary metric: macro F1; accuracy and MCC are in the result files.
+- *dmg777k:* official KGBench splits. C is chosen on validation (5,394 train → 1,001 valid); the test set (2,001) is scored once at the end.
+- *BGS+:* 5-fold cross-validation repeated 10 times over train + valid (117 units), with C tuned by an inner 3-fold CV. The official test split (29 units) is scored once at the end.
+- *Seeds:* 5 per configuration. Tables show the mean ± standard deviation over seeds.
 
-**Walks**
+Logistic regression was chosen over XGBoost after a comparison on one dmg777k embedding. It was as accurate and 20× faster to tune:
 
-- Walks use igraph's `random_walk`, which picks the next edge in proportion to its weight. It follows outgoing edges only and can return along the edge it came from.
-- Every node, literals included, starts 100 walks of depth 8. These values are hard-coded and override the constructor arguments; `flood_direction` and `walk_extraction` are unused.
-- Degree down-weighting fits this scheme (multiply edge weights). Inverse edges without backtracking, and a separate number of walks for geo-located nodes, need our own walker. `simulate_walks` in [eda/spatial.py](../eda/spatial.py) is a starting point. A vectorised walker generates all walks for one dataset in seconds, so word2vec is the only real cost.
+| Classifier | Macro F1 | Accuracy | Tuning time |
+|---|---|---|---|
+| Majority class | — | 0.478 | — |
+| Logistic regression, 5 values of C | **0.702** | **0.747** | 29 s |
+| XGBoost, default settings | 0.636 | 0.712 | 9 s |
+| XGBoost, 20-configuration random search | 0.697 | 0.735 | 553 s |
 
-**Classifier**
+## What we changed in the authors' code
 
-`original/modeling/dmg_hpt.py` tunes XGBoost with 60 rounds of Bayesian optimisation per embedding, optimises MCC and reports micro F1. See [Classifier](#classifier) for what we use instead.
+Found in the EDA and in a reading of `original/geo_rdf2vec.py`, which we kept unchanged.
+
+1. **word2vec trains on nothing.** `corpus` is an iterator that `build_vocab` uses up, so `train` sees 0 words. We write walks to a file and train from it, which also keeps memory bounded.
+2. **Longitude and latitude are swapped** when distances are computed (geopy expects (lat, lon)). For example, Amsterdam–Utrecht comes out as 39.4 km instead of 34.6 km.
+3. **Geometry detection is case-sensitive** and misses `Point(...)`. Our preprocessing writes WKT keywords in capitals.
+4. **The min-max edge weights are wrong and slow.** Each edge is normalised once from each end, and the last write wins. The loop scans the whole edge table for every node. We normalise at each node over the edges a walk can take next (`minmax_weights` in [geo.py](geo.py)). `geo_published` keeps the authors' behaviour (`authors_minmax_weights`), which we checked against the EDA's re-implementation on all 916k BGS+ edges.
+
+`geo_published` is GeoRDF2Vec as published: the authors' graph, flooding, weights and forward walks, with only bug 1 fixed.
 
 ## Experiments
 
-Each experiment changes one factor against a fixed base. Factors that help are then combined. Embeddings never see labels, so a configuration costs one word2vec training per seed; the BGS+ cross-validation only repeats the classifier.
+Each experiment changes one factor against a fixed configuration. From E2 on, that is `geo_through_literals`: walks of type (b), the authors' flooding, our min-max weights.
 
-**Base, "GeoRDF2Vec fixed":** our preprocessed graph, bugs 1, 2 and 4 fixed, the authors' flooding and min-max weights, forward walks, 100 walks of depth 8 per node.
+| # | Factor | Configurations |
+|---|---|---|
+| E0 | Baselines: majority class, kNN on coordinates; RDF2Vec (uniform walks) with each walk type; GeoRDF2Vec as published | `rdf2vec_forward`, `rdf2vec_both`, `rdf2vec_through_literals`, `geo_published` |
+| E1 | Walk direction, with geography: forward, (a) both ways ending at literals, (b) both ways through literals | `geo_forward`, `geo_both`, `geo_through_literals` |
+| E2 | Relation-aware flooding: only relations whose objects lie close together pass on locations | `geo_relation_aware` |
+| E3 | Remove the top k hubs, k ∈ {10, 50} | `geo_hubs10`, `geo_hubs50` |
+| E4 | Degree down-weighting: edge weight × degree(target)^−α, α ∈ {0.5, 1} | `geo_degree05`, `geo_degree1` |
+| E5 | Strip language tags, so literals with identical text become one node | `geo_nolang` |
+| E6 | 50 or 200 walks for nodes with their own geometry, instead of 100 | `geo_walks50`, `geo_walks200` |
+| E7 | Adaptive walk length: four stopping rules; control: depth 4 | `geo_len_cap`, `geo_len_soft`, `geo_len_budget`, `geo_len_unreliable`, `geo_depth4` |
+| E8 | Combination of the factors that did not hurt on either dataset (E1 (b), E2, E5), with and without E3's 10-hub removal | `geo_best`, `geo_best_hubs10` |
 
-E0 showed walks through literals (E1 (b)) to be best on both datasets without geography (macro F1 0.677 vs 0.627 forward on dmg777k, 0.761 vs 0.548 on BGS+), so E2–E7 are configured on E1 (b) walks with geography. The E1 runs with geography (`geo_forward`, `geo_both`, `geo_through_literals`) check that this holds.
+**Details.**
+- **E2, relation-aware flooding.** A relation passes on locations if the located subjects sharing one of its objects lie within 0.4 × the dataset's baseline spread of their group centre: 30 km on dmg777k, 99 km on BGS+. The baseline spread is the median distance of located entities from their mean position. Where too few subjects are located to measure this, a relation passes if its objects are shared by at most 20 subjects on average. Relations that carry geometries always pass. This keeps 40 of 60 relations on dmg777k and 70 of 103 on BGS+. The 0.4 was chosen by hand, without labels; the sensitivity check below shows the result is stable around it.
+- **E3, hub removal.** We remove the k highest-degree nodes, skipping labelled nodes and any hub whose removal would leave a labelled node without edges. The only node skipped is one labelled dmg777k monument that is itself among the top 50 hubs.
+- **E5, language tags.** Translations are not merged. Both datasets are nearly monolingual, so the merges join tagged and untagged copies of the same text, such as `"Aalsmeer"@nl` and `"Aalsmeer"`. That is 266 groups on dmg777k and 20 on BGS+, affecting 753 and 4,034 triples.
+- **E7, stopping rules.** *d* is the same 0.4 × baseline spread (30 / 99 km).
+  1. *Cap:* stop once the walk is more than *d* from its start.
+  2. *Soft:* stop at each step with probability 1 − exp(−distance / *d*).
+  3. *Unreliable:* stop on a node that inherits more than half of all geometries, i.e. is flooded to near the national centroid.
+  4. *Budget:* stop once the summed step lengths exceed *d*.
 
-| # | Experiment | Variants | Configs |
-|---|---|---|---|
-| E0 | Baselines | majority class and kNN on coordinates (no embedding); RDF2Vec with uniform walks, forward as the authors walk and with each of E1's two walk rules (this separates the effect of direction from that of geography); GeoRDF2Vec as published, with only bug 1 fixed | 4 |
-| — | Base | as above | 1 |
-| E1 | **Walk direction** | walks start at entities, follow edges both ways and never step straight back. (a) Inverse edges only between entities, so a walk ends at the first literal. (b) Inverse edges for every edge, so walks pass through literals; a walk steps back only at a dead end, such as a literal used by one entity | 2 |
-| E2 | Relation-aware flooding | only relations whose objects lie close together (from `relations.csv`) pass on locations; also checked without labels, see below | 1 |
-| E3 | **Hub removal** | remove the top k hubs, k ∈ {10, 50} | 2 |
-| E4 | **Degree down-weighting** | edge weight × degree(target)^−α, α ∈ {0.5, 1} | 2 |
-| E5 | **Language tags** | strip language tags, so literals with identical text become one node. Translations (`"kerk"@nl`, `"church"@en`) are not merged. Both datasets are almost monolingual, so the merges join tagged and untagged copies of the same string: on dmg777k 266 groups, mostly municipality names such as `"Aalsmeer"@nl` and `"Aalsmeer"`, only 5 of them across two languages; on BGS+ 20 groups of codes. 753 and 4,034 triples are affected, so a small effect is expected | 1 |
-| E6 | **Walks per geo-located node** | {50, 200} walks for nodes with a location, against 100 in the base | 2 |
-| E7 | Adaptive walk length | the four rules below, on walks of type E1 (b) | 4 |
-| E8 | Best combination | the factors that did not hurt on either dataset together (E1 (b), E2, E5), with and without E3's 10-hub removal. E4 (degree down-weighting) and E7 hurt on both datasets, so they are left out. Spatial block cross-validation as a robustness check | 2 |
+## Results
 
-About 21 configurations × 5 seeds × 2 datasets ≈ **210 word2vec trainings**.
+### Validation
 
-**Order.** E1 runs first. Forward walks end after about 1.7 steps, so E6 and E7 only mean something once walks can go both ways. E2–E6 then build on the walk type E1 picks; E7 always uses E1 (b). E2's label-free check can run before any training.
+Macro F1, mean ± std over 5 seeds. dmg777k: train → valid. BGS+: repeated 5-fold CV over train + valid. Δ is the difference to `geo_through_literals`, from E2 on.
 
-### Configurations
+| # | Configuration | dmg777k | Δ | BGS+ | Δ |
+|---|---|---|---|---|---|
+| E0 | rdf2vec_forward | 0.627 ± 0.010 | | 0.548 ± 0.023 | |
+| E0 | rdf2vec_both | 0.654 ± 0.010 | | 0.718 ± 0.007 | |
+| E0 | rdf2vec_through_literals | 0.677 ± 0.012 | | 0.761 ± 0.044 | |
+| E0 | geo_published | 0.610 ± 0.013 | | 0.592 ± 0.036 | |
+| E1 | geo_forward | 0.597 ± 0.009 | | 0.529 ± 0.040 | |
+| E1 | geo_both | 0.616 ± 0.018 | | 0.718 ± 0.042 | |
+| E1 | geo_through_literals | 0.672 ± 0.018 | — | 0.773 ± 0.012 | — |
+| E2 | geo_relation_aware | 0.688 ± 0.009 | +0.016 | 0.772 ± 0.044 | −0.001 |
+| E3 | geo_hubs10 | 0.686 ± 0.021 | +0.014 | 0.755 ± 0.037 | −0.018 |
+| E3 | geo_hubs50 | 0.590 ± 0.018 | −0.082 | 0.756 ± 0.055 | −0.017 |
+| E4 | geo_degree05 | 0.542 ± 0.014 | −0.130 | 0.660 ± 0.018 | −0.113 |
+| E4 | geo_degree1 | 0.486 ± 0.010 | −0.186 | 0.646 ± 0.019 | −0.127 |
+| E5 | geo_nolang | 0.674 ± 0.008 | +0.002 | 0.777 ± 0.024 | +0.004 |
+| E6 | geo_walks50 | 0.679 ± 0.009 | +0.007 | 0.744 ± 0.022 | −0.029 |
+| E6 | geo_walks200 | 0.664 ± 0.015 | −0.008 | 0.753 ± 0.046 | −0.020 |
+| E7 | geo_len_cap | 0.489 ± 0.020 | −0.183 | 0.677 ± 0.049 | −0.096 |
+| E7 | geo_len_soft | 0.519 ± 0.012 | −0.153 | 0.690 ± 0.042 | −0.083 |
+| E7 | geo_len_budget | 0.470 ± 0.009 | −0.202 | 0.694 ± 0.020 | −0.079 |
+| E7 | geo_len_unreliable | 0.682 ± 0.009 | +0.010 | 0.670 ± 0.024 | −0.103 |
+| E7 | geo_depth4 (control) | 0.658 ± 0.009 | −0.014 | 0.692 ± 0.037 | −0.081 |
+| E8 | geo_best | 0.681 ± 0.008 | +0.009 | 0.756 ± 0.061 | −0.017 |
+| E8 | **geo_best_hubs10** | **0.705 ± 0.004** | +0.033 | **0.795 ± 0.049** | +0.022 |
 
-| # | Configurations (`run.py`) |
-|---|---|
-| E0 | `rdf2vec_forward`, `rdf2vec_both`, `rdf2vec_through_literals` (done), `geo_published` |
-| Base, E1 | `geo_forward`, `geo_both`, `geo_through_literals` |
-| E2 | `geo_relation_aware` |
-| E3 | `geo_hubs10`, `geo_hubs50` |
-| E4 | `geo_degree05`, `geo_degree1` |
-| E5 | `geo_nolang` |
-| E6 | `geo_walks50`, `geo_walks200` |
-| E7 | `geo_len_cap`, `geo_len_soft`, `geo_len_budget`, `geo_len_unreliable` |
-| E7 control | `geo_depth4`: E1 (b) walks with geography, depth 4 instead of 8, about as long as the length rules make them |
-| E8 | `geo_best`: E1 (b) walks, relation-aware flooding, language tags stripped (the factors that did not hurt on either dataset); `geo_best_hubs10`: the same with the top 10 hubs removed (helped dmg777k, hurt BGS+) |
+On BGS+, the seed-to-seed standard deviation of most configurations is 0.02–0.06, so differences below about 0.05 there are not reliable.
 
-Choices made in the code, open to change:
+### Test
 
-- **Relation-aware flooding (E2).** A relation passes on locations if the located subjects sharing one of its objects lie within 0.4 × the dataset's baseline spread of their group centre (30 km on dmg777k, 99 km on BGS+), or, where too few subjects are located to measure this, if its objects are shared by at most 20 subjects on average. WKT relations always pass. 0.4 is a hand-picked value: it reproduces the EDA's hand-made BGS+ list (0.5 keeps ages, colours and map codes at 106–123 km; 0.33 drops `hasLexicon` at 85 km, which links the map to the rock units). It uses no labels, and the sensitivity check below shows that every value from 0.35 to 0.42 gives the same relations on both datasets, with no worse flooding anywhere from 0.05 to 0.45. This keeps 40 of 60 relations on dmg777k and 70 of 103 on BGS+. 18% of dmg777k nodes, reachable only through dropped relations, get no location; edges at them count as distance 0, as in the authors' code.
-- **Unreliable node (E7, rule 3):** flooding gave it more than half of all geometries. That is 17% of dmg777k nodes and 53% of BGS+ nodes with the authors' flooding (EDA: 18.5% and 50.3% inherit all of them), and none after relation-aware flooding. Removing hubs helps less on BGS+: 10% of its nodes stay unreliable after removing the top 10 hubs, and none after removing the top 50.
-- **Length rules (E7):** *d* = 0.4 × the baseline spread, the same 30 km / 99 km. A walk ends before a step that breaks rules 1, 2 and 4, and right after stepping onto an unreliable node for rule 3. Walks then average about 4–5 steps instead of 8.
-- **Geo-located node (E6):** an entity with its own geometry (31,169 on dmg777k, 22,784 on BGS+). After flooding every node has a location, so "located" has to mean its own.
-- **Hub removal (E3)** removes the k highest-degree nodes, skipping any labelled node and any hub whose removal would leave a labelled node without edges (`select_hubs`; skipped hubs are listed in the result as `hubs_skipped`). The only node skipped is `monument/8336` on dmg777k (hub 46, degree 1,105), which is itself a labelled monument; the top-50 list then takes hub 51 instead. Without this rule the monument itself would be removed, and it would get a zero vector. No other labelled node loses its edges, and every labelled node stays in the largest connected component for k ≤ 50 on both datasets. The nodes that do lose all their edges were attached only to a hub, e.g. on dmg777k 57,834 images and geometries whose only edge is `rdf:type` to `Afbeelding` or `Geometry`.
+For the test set, one configuration per method was chosen on validation: RDF2Vec, GeoRDF2Vec as published, GeoRDF2Vec with our fixes, and our best combination. Each was scored once, fitting the classifier on train + valid. The baselines do not depend on a seed.
 
-### Flooding check (E2, no labels)
+| | dmg777k (2,001 nodes) | BGS+ (29 nodes) |
+|---|---|---|
+| Majority class | 0.129 | 0.396 |
+| kNN on coordinates | 0.280 | 0.780 |
+| rdf2vec_through_literals | 0.662 ± 0.024 | **0.824 ± 0.021** |
+| geo_published | 0.564 ± 0.010 | 0.561 ± 0.036 |
+| geo_through_literals | 0.654 ± 0.021 | 0.742 ± 0.058 |
+| geo_best_hubs10 | **0.691 ± 0.008** | 0.758 ± 0.062 |
 
-Hide known locations in 5 folds, flood again, and measure where flooding puts them ([flood_check.py](flood_check.py)): on dmg777k the `hasGeometry` links of the 10,303 entities with their own geometry, on BGS+ the `hasStratotype` links of the 3,290 units with a stratotype (truth: the mean location of their stratotypes).
+On dmg777k the validation ranking holds. On BGS+ one test node is 3.4 accuracy points, and the gap between RDF2Vec and `geo_best_hubs10` is about two nodes. The BGS+ cross-validation above, over 117 nodes, is the more reliable comparison.
+
+### Spatial block cross-validation
+
+With random folds, neighbouring nodes end up in both train and test. Neighbours tend to share a class, so a model that knows where a node is gets credit for that alone. [evaluate.py](evaluate.py) scores each saved embedding twice over train + valid with the same classifier:
+- 5 random stratified folds;
+- 5 folds of spatial blocks: k-means clusters of the locations from relation-aware flooding, 25 on dmg777k and 15 on BGS+, so no test node shares a block with a training node.
+
+Each protocol is repeated 5 times. The table shows macro F1, mean over 5 seeds × 5 repeats.
+
+| | dmg777k random | dmg777k blocks | BGS+ random | BGS+ blocks |
+|---|---|---|---|---|
+| Majority class | 0.129 | 0.129 | 0.387 | 0.383 |
+| kNN on coordinates | 0.448 | 0.217 | **0.789** | 0.536 |
+| rdf2vec_forward | 0.725 | 0.703 | 0.554 | 0.478 |
+| rdf2vec_through_literals | 0.775 | 0.753 | 0.762 | 0.662 |
+| geo_published | 0.707 | 0.680 | 0.604 | 0.556 |
+| geo_through_literals | 0.756 | 0.730 | 0.775 | 0.675 |
+| geo_relation_aware | 0.779 | 0.758 | 0.773 | 0.634 |
+| geo_hubs10 | **0.785** | **0.761** | 0.761 | 0.644 |
+| geo_nolang | 0.766 | 0.742 | 0.781 | 0.681 |
+| geo_best | 0.767 | 0.750 | 0.760 | 0.626 |
+| geo_best_hubs10 | 0.776 | 0.755 | **0.795** | **0.684** |
+
+- On dmg777k, kNN on coordinates falls almost to the majority class on unseen areas, while every embedding loses only 0.02–0.03.
+- On BGS+, kNN loses 0.25, and the embeddings lose 0.05–0.14. `geo_relation_aware` and `geo_best` lose the most (0.13–0.14).
+- dmg777k scores are higher here than on the official split (0.775 against 0.677 for `rdf2vec_through_literals`): the folds train on 80% of train + valid, and the official validation split seems harder than a random draw. Compare configurations within one protocol only.
+- On dmg777k, C is the value chosen on validation for each embedding, because nested tuning would take hours. On BGS+ it is tuned by an inner 3-fold CV, grouped by block in the block protocol.
+
+### Flooding check (no labels)
+
+Known locations are hidden in 5 folds, flooding is run again, and the error is measured where flooding puts them:
+- on dmg777k, the `hasGeometry` links of the 10,303 entities with their own geometry;
+- on BGS+, the `hasStratotype` links of the 3,290 units with a stratotype. The truth is the mean location of their stratotypes.
 
 | Dataset | Flooding | Median error | 90th percentile | At the national centroid |
 |---|---|---|---|---|
@@ -100,102 +180,51 @@ Hide known locations in 5 folds, flood again, and measure where flooding puts th
 | BGS+ | all relations (authors) | 238 km | 480 km | 98% |
 | BGS+ | relation-aware | 32 km | 224 km | 0% |
 
-On BGS+, relation-aware flooding removes the national-centroid problem for these units, as in the EDA (389 → 59 km on its 97 labelled units). On dmg777k it changes little: hidden monuments still get their location from their address and city. The share placed in the correct municipality is not measured yet.
+On dmg777k, hidden monuments still get their location from their address and city, so flooding was already accurate. On BGS+, the authors' flooding sends almost every hidden unit to the national centroid, through relations such as age and colour that are shared across the whole country.
 
-**Sensitivity to the 0.4 spread fraction** (`flood_check.py --sweep`, written to `flood_sweep.csv`; one row per distinct set of passing relations, so each fraction stands for a range):
+**Sensitivity to the 0.4 threshold** (`flood_check.py --sweep`). Each row is one distinct set of passing relations:
 
-| Dataset | Spread fraction | Median error | 90th percentile | At the national centroid | Nodes with a location |
-|---|---|---|---|---|---|
-| dmg777k | 0.05–0.8 (incl. 0.4) | 2.2 km | 6.5 km | 0% | 81.5–82.1% |
-| dmg777k | 1.0 | 2.3 km | 7.3 km | 0% | 82.5% |
-| BGS+ | 0.05–0.34 (without `hasLexicon`) | 30 km | 234 km | 0% | 80.9% |
-| BGS+ | 0.35–0.42 (incl. 0.4) | 32 km | 224 km | 0% | 98.0% |
-| BGS+ | 0.45 (adds map codes) | 32 km | 224 km | 0% | — |
-| BGS+ | 0.5–0.8 (adds colours, ages, rock class) | 99 km | 353 km | 0% | 98.1% |
-| BGS+ | 1.0 | 105 km | 371 km | 13% | 98.2% |
+| Dataset | Spread fraction | Median error | 90th percentile | Nodes with a location |
+|---|---|---|---|---|
+| dmg777k | 0.05–0.8 (incl. 0.4) | 2.2 km | 6.5 km | 81.5–82.1% |
+| dmg777k | 1.0 | 2.3 km | 7.3 km | 82.5% |
+| BGS+ | 0.05–0.34 | 30 km | 234 km | 80.9% |
+| BGS+ | 0.35–0.45 (incl. 0.4) | 32 km | 224 km | 98.0% |
+| BGS+ | 0.5–0.8 | 99 km | 353 km | 98.1% |
+| BGS+ | 1.0 | 105 km | 371 km | 98.2% |
 
-The labelled nodes get a location at every fraction. On dmg777k the fraction hardly matters. On BGS+ there is a cliff between 0.45 and 0.5, where colours (0.45), ages (0.47–0.48) and the rock class (0.49) start to pass: the median error triples, and 3.6% of nodes (8% at 1.0) inherit more than half of all geometries again. Values from 0.35 to 0.45 are equally good. Below 0.34 the error stays the same, but `hasLexicon` drops out and 17% of BGS+ nodes get no location.
+- On BGS+, any fraction from 0.35 to 0.45 gives the same result.
+- Below 0.34, `hasLexicon`, which links the map to the rock units, stops passing, and 17% of nodes get no location.
+- From 0.5, colours, ages and rock class pass, and the error triples.
+- All labelled nodes get a location at every fraction.
 
-`isStratotypeFor` points to separate `…/ref/Lexicon/NamedRockUnit/…` nodes, not to the `…/id/…` units that carry the labels, so only `hasStratotype` links are hidden.
+## Conclusions by experiment
 
-**Spatial weights do bias the walks.** On BGS+ walks of type E1 (b), the median distance from the start after 8 steps is 2 km with our min-max weights against 61 km with uniform walks.
+- **E0/E1, walk direction, is the largest effect.** Forward walks end after about one step, because most edges lead to literals. Walks of type (b), which pass through literals both ways, beat forward walks by 0.05–0.24 and type (a) by 0.02–0.06, with or without geography.
+- **E2, relation-aware flooding,** makes flooding accurate on BGS+ but barely changes classification. Location is not where the class signal is on dmg777k, and on BGS+ what it adds is mostly local, as the spatial blocks show.
+- **E3/E4, hubs.** Hubs such as photographers and collections seem to connect nodes of the same class, so weakening every hub (E4) or removing many of them (E3, k = 50 on dmg777k) loses that signal. Removing only the 10 largest is neutral alone (+0.014, −0.018) and gives the best combination with E2 and E5. Those 10 are class nodes such as `Geometry` and `Afbeelding` (image), and the most common techniques, collections and photographers.
+- **E5, language tags,** and **E6, walks per located node,** make no measurable difference.
+- **E7, adaptive walk length.** The three distance rules hurt on both datasets.
+  - On dmg777k, the unreliable-node rule cuts walks to the same length (4.4 steps) as the distance rules and loses nothing, and the depth-4 control loses only 0.014. So the distance rules hurt by cutting specific long jumps, not by making walks shorter.
+  - On BGS+, every rule costs about as much as shortening the walks to depth 4.
+- **E8.** `geo_best_hubs10` is the best configuration on validation on both datasets, and the best on the dmg777k test set. Its margin over RDF2Vec without geography holds on the official dmg777k split, but not in cross-validation over train + valid, and not on BGS+.
 
-### Adaptive walk length (E7)
+## Not done
 
-A length rule needs walks that get long. Measured on 200k walks per dataset (20k entity starts, depth 8):
+- **Correct-municipality share in the flooding check.** It is in [evaluation_plan.md](evaluation_plan.md), but we only measured distance error.
+- **Relation-aware flooding together with adaptive walk length.** The plan listed this combination, but E7 hurt on both datasets, so E8 left it out.
+- **Per-class F1.** It is planned as a diagnostic, but not reported. Per-run predictions can be recomputed from the saved vectors.
+- **XGBoost.** The comparison was not repeated on the final configurations, and the paper's own classifier setup (XGBoost, 60 rounds of Bayesian tuning) was not reproduced. All reported scores use logistic regression.
 
-| Walk type | dmg777k: mean steps, reach 8 | BGS+: mean steps, reach 8 |
-|---|---|---|
-| Forward | 1.0, 0% | 1.0, 0% |
-| E1 (a): end at the first literal | 2.3, 1.5% | 3.4, 11.6% |
-| Through literals, never step back (walks stop at literals used by one entity) | 3.8, 17.5% | 4.1, 21.9% |
-| E1 (b): through literals, step back only at a dead end | 8.0, 100% | 8.0, 100% |
+## Reproducing
 
-Only E1 (b) walks get long, as in the EDA, where they kept drifting away from the start (16 → 87 km on dmg777k). Passing through shared literals is also where walks jump far: monuments that share a build year are 66–73 km apart. E7 therefore runs on E1 (b).
+```
+uv run python -m experiments.run <dataset> <config> [<config> ...] [--seeds 0 1 2 3 4]   # dataset: dmg777k or bgs
+uv run python -m experiments.flood_check dmg777k bgs [--sweep]
+uv run python -m experiments.evaluate dmg777k bgs                                         # spatial_cv.csv
+uv run python -m experiments.evaluate dmg777k bgs --test rdf2vec_through_literals geo_published geo_through_literals geo_best_hubs10
+```
 
-All four rules are tested:
+A run skips itself if its result file exists, so an interrupted batch resumes where it stopped. Flooding is cached in `data/<dataset>/runs/_flood/`.
 
-1. **Distance cap:** stop once the walk is more than *d* km from its start node's location. This is the main candidate.
-2. **Distance-based stopping probability:** at each step, stop with probability 1 − exp(−distance / *d*). This is a soft version of 1 without a hard edge.
-3. **Stop at location-less nodes:** stop on entering a node whose location is unreliable, such as one flooded to the national centroid. 91–97% of both-way BGS+ walks touch such a hub.
-4. **Distance budget:** stop once the summed length of the steps exceeds *d* km. Unlike 1, this also stops walks that wander back and forth near the start.
-
-*d* is set per dataset from the EDA distances, since BGS+ covers a larger area than dmg777k.
-
-**Results so far.** All four rules lower macro F1, except rule 3 on dmg777k. Rule 3 cuts dmg777k walks about as much as the distance rules do (4.4 steps against 4.0–4.1), yet it scores like full-length walks (0.682 against 0.672). The distance rules score 0.47–0.52. So on dmg777k the loss seems to come from which steps the distance rules cut, the long jumps to distant monuments that share a photographer or collection, rather than from shorter walks as such. `geo_depth4` tests this: uniformly short walks with no distance rule.
-
-### Classifier
-
-**Logistic regression** (standardised vectors, C tuned on validation over {0.001, 0.01, 0.1, 1, 10}) for every run. It is as accurate as tuned XGBoost here and much faster.
-
-Measured on one dmg777k embedding (walks both ways from entities, 100 × depth 8, no spatial weights), trained on the training split, scored on validation:
-
-| Classifier | Macro F1 | Accuracy | Tuning time |
-|---|---|---|---|
-| Majority class | — | 0.478 | — |
-| Logistic regression, 5 values of C | **0.702** | **0.747** | 29 s |
-| XGBoost, default settings | 0.636 | 0.712 | 9 s |
-| XGBoost, 20-config random search | 0.697 | 0.735 | 553 s |
-
-A linear model also suits BGS+, with only 117 labelled units per cross-validation. XGBoost with the authors' Bayesian tuning is kept only for the paper-reproduction row. This is one embedding on one dataset: repeat the comparison on the final configuration of each dataset.
-
-## Run time and machines
-
-Measured on this PC (Ryzen 5 3600X, 6 cores / 12 threads), word2vec with 200 dimensions, window 5, 10 epochs. Times are extrapolated from 5% of the start nodes; the dmg777k both-way run was also timed in full.
-
-| Walks | dmg777k | BGS+ |
-|---|---|---|
-| Forward, from all nodes (authors) | 23 min (53 min if one-token walks are kept) | about 20 min, estimated from dmg777k (45 min if kept, measured) |
-| Both ways through literals, from entities (E1 (b)) | 18 min (measured on 5 seeds) | 17 min on the M1 |
-| E1 (a), ending at the first literal | 20 min (measured: short walks are slow per token) | 16 min on the M1 |
-
-- **Skip one-token walks.** Most forward walks start at a literal and stop at once. They give word2vec no training pairs but cost half its time, so we drop them; the vectors of the labelled nodes are unaffected.
-- **Total compute.** About 20 min per run on both machines. The 16 geographic configurations are 80 runs per dataset, about 27 h on each machine in parallel. Flooding takes 7–60 s per variant and is cached in `data/<dataset>/runs/_flood/`.
-- **Splitting the work.** Run all seeds of a configuration on the same machine, and log the machine with each run.
-- **Fallback.** If runs take longer than this, compare variants with 3 seeds and use 5 only for the final table.
-
-## Running on two machines
-
-Every (dataset, configuration, seed) is an independent run. The standing split is **dmg777k on the PC, BGS+ on the MacBook**: BGS+ runs are shorter, which suits the slower, fanless laptop, and each machine only needs one dataset.
-
-- The PC needs `data/kgbench_dmg777k/processed/` and `full_triple_set.csv`. The Mac needs `data/bgs/processed/` (74 MB), `data/bgs/full_triple_set.csv` (189 MB, read by `geo_published`) and, to skip recomputing it, the flooding cache `data/bgs/runs/_flood/` (45 MB), all copied from the PC.
-- Run all seeds of a configuration on one machine. Each result records the machine name.
-- A run whose result file exists is skipped, so after an interruption re-run the same command.
-- To merge, copy `experiments/results/bgs/` from the Mac into the PC's checkout.
-- On the Mac, prefix commands with `caffeinate -i` and keep it plugged in with the lid open, or macOS sleeps and the run stops.
-
-## Schedule
-
-| Dates | Work |
-|---|---|
-| 24–25 Nov | Pipeline and geography (done); E0 without geography (done); E2 flooding check (done) |
-| 27 Nov – 1 Dec | E0–E7 |
-| 2–3 Dec | E8 and the spatial block cross-validation |
-| 4–5 Dec | Results tables and write-up |
-| 6–7 Dec | Buffer |
-
-The pipeline has three parts that can be built in parallel once the config format is agreed:
-
-- **(A)** walker and word2vec;
-- **(B)** graph variants, flooding, edge weights and the flooding check;
-- **(C)** evaluation: splits, BGS+ repeated cross-validation, metrics, baselines and tables.
+**Compute.** One run takes 10–26 minutes, almost all of it word2vec, on a Ryzen 5 3600X (12 threads) or a MacBook Air M1. The 220 runs took about 70 hours of compute, split across the two machines; each result file records the machine it ran on. Spatial cross-validation and test scoring take a few minutes.

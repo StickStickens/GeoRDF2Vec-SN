@@ -5,7 +5,7 @@
 
 Each (dataset, configuration, seed) writes experiments/results/<dataset>/<config>_seed<k>.json and
 stops early if that file exists, so an interrupted batch resumes where it stopped. The vectors of
-the labelled nodes go to data/<dataset>/runs/<config>/seed<k>.npz, so test scores and other
+the labelled nodes go to data/<dataset>/runs/<config>/<config>_seed<k>.npz, so test scores and other
 classifiers can be computed later without retraining. Test labels are never read here.
 
 Flooding does not depend on the seed, so its result is cached in data/<dataset>/runs/_flood/.
